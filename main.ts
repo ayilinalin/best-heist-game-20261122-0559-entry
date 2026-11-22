@@ -5,6 +5,11 @@
 //
 // Di luar grader, MAKEFUN_OUTPUT_DIR menggantikan /output.
 // Program ini deterministik: dua run menulis byte yang sama.
+//
+// Perbaikan round 2: JANGAN rmSync direktori output itu sendiri. Di grader,
+// /output adalah Docker volume mount dan rmdir pada mount point gagal
+// EBUSY (exit 1, run_completes). mkdirSync saja sudah cukup — grader
+// menjamin /output kosong.
 
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -12,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
-const outDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 function copyTree(src: string, dest: string): void {
   mkdirSync(dest, { recursive: true });
@@ -33,8 +38,17 @@ const shotsDir = join(repoRoot, 'screenshots');
 if (!existsSync(gameDir)) throw new Error('main.ts: game/ tidak ditemukan di repo');
 if (!existsSync(shotsDir)) throw new Error('main.ts: screenshots/ tidak ditemukan di repo');
 
-rmSync(outDir, { recursive: true, force: true });
-mkdirSync(outDir, { recursive: true });
+// Bersihkan ISI outDir per item, bukan direktorinya: anak-anak mount point
+// aman dihapus, direktorinya sendiri tidak. Grader menjamin /output kosong,
+// ini hanya pengaman kalau ada sisa run sebelumnya.
+function emptyDir(dir: string): void {
+  mkdirSync(dir, { recursive: true });
+  for (const name of readdirSync(dir)) {
+    rmSync(join(dir, name), { recursive: true, force: true });
+  }
+}
+
+emptyDir(outDir);
 copyTree(gameDir, join(outDir, 'game'));
 copyTree(shotsDir, join(outDir, 'screenshots'));
 
